@@ -1,1 +1,1 @@
-# GlobeTravel.AI
+GlobTravel.AI is the conversational agent that can provide personalized travel recommendations based on user input. The chatbot will take user preferences (e.g., destination, budget, activities), suggest travel itineraries, and even provide recommendations for restaurants, hotels, and attractions. It can use external APIs for real-time data (optional for more advanced learning).
