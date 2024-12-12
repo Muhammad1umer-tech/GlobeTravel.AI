@@ -1,0 +1,8 @@
+python-dotenv
+langchain_openai
+langchain
+langgraph
+pyprojroot
+langchain_community
+langchain_chroma
+websockets

@@ -1,0 +1,121 @@
+/* Global Styles */
+body, html {
+  margin: 0;
+  padding: 0;
+  font-family: "Inter", sans-serif;
+  background: linear-gradient(120deg, #e0eafc, #cfdef3);
+  height: 100%;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.agentic-flow-wrapper {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  justify-content: center;
+  width: 500px;
+  max-width: 500px;
+}
+
+.agentic-flow-container {
+  width: 500px;
+  background: #ffffff;
+  border-radius: 15px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  transition: all 0.3s ease-in-out;
+  margin-bottom: 20%;
+}
+
+.header {
+  background: linear-gradient(135deg, #6b73ff, #000dff);
+  color: #ffffff;
+  padding: 20px;
+  text-align: center;
+  border-bottom: 2px solid #e0eafc;
+}
+
+.header h1 {
+  font-size: 1.8rem;
+  margin: 0;
+}
+
+.header p {
+  font-size: 1rem;
+  margin: 5px 0 0;
+  opacity: 0.8;
+}
+
+.input-form {
+  display: flex;
+  gap: 10px;
+  padding: 20px;
+}
+
+.input-box {
+  flex: 1;
+  padding: 12px 15px;
+  border: 2px solid #ddd;
+  border-radius: 12px;
+  font-size: 1rem;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.input-box:focus {
+  border-color: #6b73ff;
+  box-shadow: 0 0 10px rgba(107, 115, 255, 0.4);
+  outline: none;
+}
+
+.send-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 15px;
+  background: linear-gradient(135deg, #6b73ff, #000dff);
+  border: none;
+  border-radius: 12px;
+  color: #ffffff;
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+
+.send-button:disabled {
+  background: #b3b8ff;
+  cursor: not-allowed;
+}
+
+.send-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #5a64e6, #000bdd);
+}
+
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.result-container {
+  border-radius: 15px;
+  padding: 20px;
+  width: 500px;
+  background: #f8f9fc;
+  border-top: 2px solid #e0eafc;
+  text-align: center;
+}
+
+.result {
+  font-size: 1.2rem;
+  color: #333;
+}

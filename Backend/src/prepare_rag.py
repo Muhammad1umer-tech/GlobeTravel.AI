@@ -1,12 +1,9 @@
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.document_loaders import PyPDFLoader
 from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
 from langchain_openai import ChatOpenAI
 from langchain_chroma import Chroma
 from dotenv import load_dotenv
 from pyprojroot import here
-from uuid import uuid4
 import json
 import os
 load_dotenv()
@@ -100,6 +97,7 @@ def input_to_rag(query, ragAgent):
     return results
                
 def test_connection():
+    chroma_directory = str(here("data/Flight.json_db"))
     vector_store = Chroma(collection_name=collection_name, 
                                 embedding_function=embeddings, 
                                 persist_directory=chroma_directory)

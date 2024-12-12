@@ -1,38 +1,17 @@
+
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
-from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field
 from dotenv import load_dotenv
-from typing import Optional
 
-from testing_flight_db import input_to_query, func_execute_query
-from prepare_rag import input_to_rag
+from Baseclass import AgentState, AgentReturnState, SelectDatabase, Inputrefine, SelectOutputChecker
+from tools import input_to_query, input_to_rag, func_execute_query
 load_dotenv()
 
 llm = ChatOpenAI(model="gpt-4o")
 nodes = ["SQLAgent", "RAGAgent", "SearchToolAgent", "END"]
 
-   
-class AgentState(BaseModel):
-    input: Optional[str] = None
-    outputs: Optional[str] = ""
-    inputs: list[str] = []
-    remaining_input: Optional[str] = None
-    query_result: Optional[str] = None
-    max_itration: Optional[int] = 0
-    is_fulfullied: Optional[bool] = None
-    next_node: Optional[str] = None
-    output: Optional[str] = None
-    database: Optional[str] = None
-    error: Optional[str] = None
-
-class Inputrefine(BaseModel):
-    inputs: list[str] = Field(
-        description="""Divide the input into multiple chunks according to input
-        if user requests multiple things.""")
-    
 def InputRefiner(state: AgentState):
     system = ("""
         System: You are an InputRefiner Agent. Your job is to analyze user input, 
@@ -104,9 +83,7 @@ def PrimaryAgent(state: AgentState):
     state.next_node = response
     return state
 
-class SelectDatabase(BaseModel):
-    database: str = Field(
-        description="Select the database that is relevant to the input and output.")
+
 
 
 Database = ["Flight.db", "Hotel.db"]
@@ -184,15 +161,50 @@ def ExecuteSQL(state: AgentState):
     print("\nend ExecuteSQL state: ", state)
     return state
 
+def HumanInALoop(state: AgentState):
+    """node that interrupts after RegenerateQuery
+    """
+    print("\nnHumanInALoop node")
+    system = ("""You are an Agent that checks the input and tell whether user wants to continue or not.
+        Your answer should be YES or NO"""
+    )
+    check_prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", system),
+            MessagesPlaceholder(variable_name="input")
+        ]
+    )
+    input = state.input
+        
+    chain = check_prompt | llm | StrOutputParser()
+    response = chain.invoke({"input": [HumanMessage(content=input)]})
+    
+    print("nHumanInALoop response ", response)
+    if response == "YES":
+        state.input = state.inputs[0]
+        if len(state.inputs) > 1:
+            state.inputs = state.inputs[1:]
+        else: 
+            state.inputs = []
+            
+        state.next_node = "PrimaryAgent"
+    else:
+        state.outputs = "Thankyou"
+        state.next_node = "OutputNode"
+    print("\nHumanInALoop end: ", state.database)
+    return state
+    
 
 def RegenerateQuery(state: AgentState):
     print("\nRegenerate Query max_itration ", state.max_itration)
     state.max_itration += 1
-    if state.max_itration > 3:
-        state.output = "Error, max iteration reached"
-        state.next_node = 'END'
+    if state.max_itration >= 2:
+        state.max_itration = 0
+        state.output = "Error, max iteration reached, do you want to regenerate again?"
+        state.next_node = 'HumanInALoop'
     else:
         state.next_node = 'ConvertToSql'
+        
     return state
    
    
@@ -225,56 +237,6 @@ def GenerateHumanResponse(state: AgentState):
     state.output = response
     print("\nend GenerateHumanResponse state: ", state)
     return state
-
-class SelectOutputChecker(BaseModel):
-    missing_info: Optional[str] = Field(description="Description of any missing information in the response", default=None)
-    fulfilled: bool = Field(description="Whether the response fully answers the user's query")
-
-def OutputChecker(state: AgentState):
-    system_prompt = (
-    """You are an Output Checker responsible for validating if the output addresses the input query. 
-       Your goal is to check if output aligns with input. If output is relevent to input, then it is good.
-    
-    - If the output answers the input, return `fulfilled: True`.
-    - If the output does not answers the input, return `fulfilled: False` and specify what is missing in `missing_info`.
-    - Do **not** include any extra details that is not mentioned in the input query.
-    
-    input: {input}
-    output: {output}""")
-
-    
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
-    ])
-        
-    chain = prompt | llm.with_structured_output(SelectOutputChecker)
-    
-    output = state.output
-    input = state.input
-
-    response = chain.invoke({"output": output, "input": input})
-    print("\nOutputChecker response " ,response," ", type(response))
-    
-    if len(state.inputs) == 1 and response.fulfilled == True: 
-        print("\nOutputChecker if ", state.inputs ," ", response)
-        state.inputs = state.inputs[1:]
-        state.outputs = state.outputs + " " + output
-        print("Final Answer: ---> ", state.outputs)
-        state.next_node = "END"
-    elif len(state.inputs) > 1 and response.fulfilled == True:
-        print("\nOutputChecker elif ", state.inputs ," ", response)
-        
-        state.inputs = state.inputs[1:]
-        state.input = state.inputs[0]
-        state.outputs = state.outputs + " " + output
-        state.next_node = "PrimaryAgent"
-    else:
-        print("\nOutputChecker else ", state.inputs ," ", response)
-        state.remaining_input = response.missing_info
-        state.is_fulfullied = False
-        state.next_node = "PrimaryAgent"    
-    return state
-    
 
 def RAGAgent(state: AgentState):
     Database = ["Flight", "Hotel"]
@@ -338,6 +300,73 @@ def RAGAgentToQueryToHumanResponse(state: AgentState):
     print("\nresponse RAGAgentToQueryToHumanResponse: ", response)
     return state
      
+  
+
+def OutputChecker(state: AgentState):
+    system_prompt = (
+    """You are an Output Checker responsible for validating if the output addresses the input query. 
+       Your goal is to check if output aligns with input. If output is relevent to input, then it is good.
+    
+    - If the output answers the input, return `fulfilled: True`.
+    - If the output does not answers the input, return `fulfilled: False` and specify what is missing in `missing_info`.
+    - Do **not** include any extra details that is not mentioned in the input query.
+    
+    input: {input}
+    output: {output}""")
+
+    
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt),
+    ])
+        
+    chain = prompt | llm.with_structured_output(SelectOutputChecker)
+    
+    output = state.output
+    input = state.input
+
+    response = chain.invoke({"output": output, "input": input})
+    print("\nOutputChecker response " ,response," ", type(response))
+    
+    if len(state.inputs) == 1 and response.fulfilled == True: 
+        print("\nOutputChecker if ", state.inputs ," ", response)
+        state.inputs = state.inputs[1:]
+        state.outputs = state.outputs + " " + output
+        print("Final Answer: ---> ", state.outputs)
+        state.next_node = "OutputNode"
+        
+    elif len(state.inputs) > 1 and response.fulfilled == True:
+        print("\nOutputChecker elif ", state.inputs ," ", response)   
+        state.inputs = state.inputs[1:]
+        state.input = state.inputs[0]
+        state.outputs = state.outputs + " " + output
+        state.next_node = "PrimaryAgent"    
+    
+    else:
+        print("\nOutputChecker else ", state.inputs ," ", response)
+        state.remaining_input = response.missing_info
+        state.is_fulfullied = False
+        state.next_node = "PrimaryAgent"    
+    
+    print(state)
+    return state
+    
+      
+def OutputNode(state: AgentState) -> AgentReturnState:
+    output = state.outputs
+    
+    system_prompt = f"""
+            You are a Agent that converts the response into a a short readable paragraph format. 
+            output: {output}
+            """
+            
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt),
+    ])
+    
+    chain = prompt | llm | StrOutputParser()
+    response = chain.invoke({"output": [HumanMessage(content=output)]})
+    print("ANSWER -> ", response)
+    return {'output': response}
 
 def SearchToolAgent(state):
     pass
@@ -345,113 +374,25 @@ def SearchToolAgent(state):
 def Where_To_Continue_1(state: AgentState):
     next_node = state.next_node
     print("\nWhere_To_Continue_1 function --->", next_node)
-
     return next_node
 
 def Where_To_Continue_2(state: AgentState):
     next_node = state.next_node
     print("\nWhere_To_Continue_2 function --->", next_node)
-
     return next_node
 
 def Where_To_Continue_3(state: AgentState):
     next_node = state.next_node
     print("\nWhere_To_Continue_3 function --->", next_node)
-
     return next_node
 
 def Where_To_Continue_4(state: AgentState):
     next_node = state.next_node
     print("\nWhere_To_Continue_4 function --->", next_node)
+    return next_node
 
+def Where_To_Continue_5(state: AgentState):
+    next_node = state.next_node
+    print("\nWhere_To_Continue_5 function --->", next_node)
     return next_node
  
-
-workflow = StateGraph(AgentState)
-
-workflow.add_node("InputRefiner", InputRefiner)
-workflow.add_node("PrimaryAgent", PrimaryAgent)
-workflow.add_node("SQLAgent", SQLAgent)
-workflow.add_node("ConvertToSql", ConvertToSql)
-workflow.add_node("ExecuteSQL", ExecuteSQL)
-workflow.add_node("GenerateHumanResponse", GenerateHumanResponse)
-workflow.add_node("RegenerateQuery", RegenerateQuery)
-workflow.add_node("OutputChecker", OutputChecker)
-
-workflow.add_node("RAGAgent", RAGAgent)
-workflow.add_node("RAGAgentToQueryToHumanResponse", RAGAgentToQueryToHumanResponse)
-
-workflow.add_node("SearchToolAgent", SearchToolAgent)
-
-workflow.add_edge(START, "InputRefiner")
-
-workflow.add_edge("InputRefiner", "PrimaryAgent")
-workflow.add_conditional_edges(
-    "PrimaryAgent",
-    Where_To_Continue_1,
-    {
-        "RAGAgent": "RAGAgent",
-        "SearchToolAgent": "SearchToolAgent",
-        "SQLAgent": "SQLAgent",
-        "END": END
-    }
-)
-workflow.add_edge("SQLAgent", "ConvertToSql")
-workflow.add_edge("ConvertToSql", "ExecuteSQL")
-workflow.add_conditional_edges(
-    "ExecuteSQL",
-    Where_To_Continue_2,
-    {
-        "RegenerateQuery": "RegenerateQuery",
-        "GenerateHumanResponse": "GenerateHumanResponse",
-    }
-)
-workflow.add_conditional_edges(
-    "RegenerateQuery",
-    Where_To_Continue_3,
-    {
-        "ConvertToSql": "ConvertToSql",
-        "END": END
-    }
-)
-workflow.add_edge("GenerateHumanResponse", "OutputChecker")
-workflow.add_edge("RAGAgentToQueryToHumanResponse", "OutputChecker")
-
-workflow.add_conditional_edges(
-    "OutputChecker",
-    Where_To_Continue_4,
-    {
-        "PrimaryAgent": "PrimaryAgent",
-        "END": END
-    }
-)
-workflow.add_edge("RAGAgent", "RAGAgentToQueryToHumanResponse")
-workflow.add_edge("SearchToolAgent", END)
-
-graph = workflow.compile()
-
-def save_graph():
-    graph_png_data = graph.get_graph().draw_mermaid_png()
-    with open("./langgraph_output.png", "wb") as f:
-        f.write(graph_png_data)
-
-def run():
-    while True:
-        user_input = input("User: ")
-        if user_input.lower() in ["quit", "exit", "q"]:
-            print("\nGoodbye!")
-            break
-
-        events = graph.invoke({"input": user_input})
-        print("\nevents ", events)
-        for event in events:
-            for value in event.values():
-                print("\nAssistant:", value)
-
-# result = graph.invoke({"input": "tell me about the flight to uk and its prices as well, and i also want the details of hotel in usa. How can I contact you guys?"})
-# result = graph.invoke({"input": "tell me about the flight from usa and hotels as well. How can i contect to book a flight and policies of flight and hotels"})
-result = graph.invoke({"input": "I wanna go to use for a tour, suggest me flights, dates and hotels in USA. what is the cancellation policy."})
-# print(result)
-# save_graph()
-
-
